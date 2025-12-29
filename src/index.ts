@@ -1,50 +1,50 @@
-import { createDb } from "./db";
+import { createDb, IDb_Record } from './db';
 
-const citySource = [
-  { uuid: "3ba648aa-4498-43da-b29f-b83f37a25429", name: "Алматы" },
-  { uuid: "32d82d73-3eac-4e5a-9921-fcd2e1447c76", name: "Астана" },
-];
+// Типы документов
+interface CityDoc { uuid: string; name: string; }
+interface DivisionDoc { uuid: string; name: string; cityUuid: string; }
+interface PositionDoc { uuid: string; name: string; }
+interface EmployeeDoc { 
+  uuid: string; 
+  firstName: string; 
+  lastName: string; 
+  divisionUuid: string; 
+  cityUuid: string; 
+  positionUuid: string; 
+}
 
-const divisionSource = [
-  {
-    uuid: "97cf9556-2882-4c4a-b7b5-37cf53347447",
-    name: "Департамент информационных технологий",
-    cityUuid: "3ba648aa-4498-43da-b29f-b83f37a25429",
-  },
-  {
-    uuid: "3e80754a-3681-4e5c-8d6d-b84d09a7a3c4",
-    name: "Дирекция",
-    cityUuid: "3ba648aa-4498-43da-b29f-b83f37a25429",
-  },
-];
+// Type guards для безопасного приведения типов
+const isCityDoc = (record: IDb_Record): record is IDb_Record & { data: CityDoc } => 
+  typeof record.data === 'object' && 
+  'uuid' in record.data && typeof record.data.uuid === 'string' &&
+  'name' in record.data && typeof record.data.name === 'string';
 
-const positionSource = [
-  {
-    uuid: "3e80754a-3681-4e5c-8d6d-b84d09a7a3c4",
-    name: "Руководитель службы поддержки",
-  },
-  { uuid: "cc811dfb-7f73-4c18-969f-c8408fd92263", name: "Разработчик" },
-];
+const isDivisionDoc = (record: IDb_Record): record is IDb_Record & { data: DivisionDoc } => 
+  typeof record.data === 'object' && 
+  'uuid' in record.data && typeof record.data.uuid === 'string' &&
+  'name' in record.data && typeof record.data.name === 'string' &&
+  'cityUuid' in record.data && typeof record.data.cityUuid === 'string';
 
-const employeeSource = [
-  {
-    uuid: "65f5c1d4-fb87-4da2-b0bd-a22343605396",
-    firstName: "Name 1",
-    lastName: "Name 2",
-    divisionUuid: "3e80754a-3681-4e5c-8d6d-b84d09a7a3c4",
-    cityUuid: "3ba648aa-4498-43da-b29f-b83f37a25429",
-    positionUuid: "cc811dfb-7f73-4c18-969f-c8408fd92263",
-  },
-  {
-    uuid: "59e23b74-8645-46d6-9751-5fe594dd89e6",
-    firstName: "Name 1",
-    lastName: "Name 2",
-    divisionUuid: "3e80754a-3681-4e5c-8d6d-b84d09a7a3c4",
-    cityUuid: "3ba648aa-4498-43da-b29f-b83f37a25429",
-    positionUuid: "cc811dfb-7f73-4c18-969f-c8408fd92263",
-  },
-];
+const isPositionDoc = (record: IDb_Record): record is IDb_Record & { data: PositionDoc } => 
+  typeof record.data === 'object' && 
+  'uuid' in record.data && typeof record.data.uuid === 'string' &&
+  'name' in record.data && typeof record.data.name === 'string';
 
+const isEmployeeDoc = (record: IDb_Record): record is IDb_Record & { data: EmployeeDoc } => 
+  typeof record.data === 'object' && 
+  'uuid' in record.data && typeof record.data.uuid === 'string' &&
+  'firstName' in record.data && typeof record.data.firstName === 'string' &&
+  'lastName' in record.data && typeof record.data.lastName === 'string' &&
+  'divisionUuid' in record.data && typeof record.data.divisionUuid === 'string' &&
+  'cityUuid' in record.data && typeof record.data.cityUuid === 'string' &&
+  'positionUuid' in record.data && typeof record.data.positionUuid === 'string';
+
+interface HRAppState {
+  cities: Map<string, CityDoc>;
+  divisions: Map<string, DivisionDoc>;
+  positions: Map<string, PositionDoc>;
+  employees: Map<string, EmployeeDoc>;
+}
 
 export interface IHRApp {
   employeeWithCityList: () => Promise<{ firstName: string; city: string }[]>;
@@ -61,17 +61,79 @@ export interface IHRApp {
 
 export const createHRApp = (): IHRApp => {
   const db = createDb();
+  const state: HRAppState = {
+    cities: new Map(),
+    divisions: new Map(),
+    positions: new Map(),
+    employees: new Map(),
+  };
 
+  // Инициализация с type-safe приведением типов
+  const initData = async () => {
+    // Города
+    const citiesResp = await db.query({ type: 'city', where: {} });
+    for (const record of citiesResp.items) {
+      if (isCityDoc(record)) {
+        state.cities.set(record.data.uuid, record.data);
+      }
+    }
+
+    // Подразделения
+    const divisionsResp = await db.query({ type: 'division', where: {} });
+    for (const record of divisionsResp.items) {
+      if (isDivisionDoc(record)) {
+        state.divisions.set(record.data.uuid, record.data);
+      }
+    }
+
+    // Должности
+    const positionsResp = await db.query({ type: 'position', where: {} });
+    for (const record of positionsResp.items) {
+      if (isPositionDoc(record)) {
+        state.positions.set(record.data.uuid, record.data);
+      }
+    }
+
+    // Сотрудники
+    const employeesResp = await db.query({ type: 'employee', where: {} });
+    for (const record of employeesResp.items) {
+      if (isEmployeeDoc(record)) {
+        state.employees.set(record.data.uuid, record.data);
+      }
+    }
+  };
+
+  initData().catch(console.error);
+
+  const getCityName = (cityUuid: string): string => 
+    state.cities.get(cityUuid)?.name ?? 'Неизвестный город';
+
+  const getDivisionName = (divisionUuid: string): string => 
+    state.divisions.get(divisionUuid)?.name ?? 'Неизвестное подразделение';
+
+  const getPositionName = (positionUuid: string): string => 
+    state.positions.get(positionUuid)?.name ?? 'Неизвестная должность';
 
   return {
     employeeWithCityList: async () => {
-      return [];
+      return Array.from(state.employees.values())
+        .map(emp => ({
+          firstName: emp.firstName,
+          city: getCityName(emp.cityUuid)
+        }));
     },
+
     employeeWithPositionList: async () => {
-      return [];
+      return Array.from(state.employees.values())
+        .map(emp => ({
+          firstName: emp.firstName,
+          position: getPositionName(emp.positionUuid),
+          division: getDivisionName(emp.divisionUuid)
+        }));
     },
+
     update: async () => {
-      // этот метод имплементировать не нужно
+      // Не требуется имплементация
     },
   };
 };
